@@ -1,0 +1,27 @@
+import { Router } from 'express';
+import { authRouter } from './modules/auth/auth.routes.js';
+import { penggunaRouter } from './modules/pengguna/pengguna.routes.js';
+import { pelangganRouter } from './modules/pelanggan/pelanggan.routes.js';
+import { barangRouter } from './modules/barang/barang.routes.js';
+import { jasaRouter } from './modules/jasa/jasa.routes.js';
+import { pembelianRouter } from './modules/pembelian/pembelian.routes.js';
+import { transaksiRouter } from './modules/transaksi/transaksi.routes.js';
+import { pengeluaranRouter } from './modules/pengeluaran/pengeluaran.routes.js';
+import { laporanRouter } from './modules/laporan/laporan.routes.js';
+import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
+import { logAktivitasRouter } from './modules/log-aktivitas/log-aktivitas.routes.js';
+import { pengaturanRouter } from './modules/pengaturan/pengaturan.routes.js';
+
+export const apiRouter = Router();
+apiRouter.use('/auth', authRouter);
+apiRouter.use('/pengguna', penggunaRouter);
+apiRouter.use('/pelanggan', pelangganRouter);
+apiRouter.use('/barang', barangRouter);
+apiRouter.use('/jasa', jasaRouter);
+apiRouter.use('/pembelian', pembelianRouter);
+apiRouter.use('/transaksi', transaksiRouter);
+apiRouter.use('/pengeluaran', pengeluaranRouter);
+apiRouter.use('/laporan', laporanRouter);
+apiRouter.use('/dashboard', dashboardRouter);
+apiRouter.use('/log-aktivitas', logAktivitasRouter);
+apiRouter.use('/pengaturan', pengaturanRouter);

@@ -1,0 +1,388 @@
+# Contoh request untuk tes manual (ekstensi "REST Client" di VS Code).
+#
+# Cara pakai:
+#  1. Jalankan backend (`npm run dev`) dan sesuaikan @host di bawah kalau PORT bukan 3000.
+#  2. Jalankan request dari atas ke bawah. Cookie login tersimpan otomatis dan dipakai request
+#     berikutnya; login sebagai role lain untuk mengganti sesi (bagian "Login sebagai ...").
+#  3. Beberapa request bernama (# @name ...) dipakai request sesudahnya lewat
+#     {{nama.response.body.$.data.id}}, jadi jalankan berurutan.
+#
+# Akun awal: username `admin`, password sesuai SEED_ADMIN_PASSWORD di .env.
+
+@host = http://localhost:3000
+@base = {{host}}/api/v1
+@adminUser = admin
+@adminPass = ganti-password-ini
+@sandiStaf = rahasia123
+
+###############################################################################
+# 0. Cek server
+###############################################################################
+
+### Server hidup → { "status": "ok" }
+GET {{host}}/health
+
+### Path tak dikenal → 404 format error standar
+GET {{base}}/tidak-ada
+
+###############################################################################
+# 1. Login sebagai Admin & akun
+###############################################################################
+
+### Login sebagai admin (cookie tersimpan otomatis; gagal → 401 LOGIN_GAGAL; 10 gagal/15 menit → 429)
+# @name loginAdmin
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "username": "{{adminUser}}", "password": "{{adminPass}}" }
+
+### Profil sendiri (untuk menentukan menu di frontend)
+GET {{base}}/auth/me
+
+### Daftar mekanik (mekanik + admin aktif) untuk dropdown form transaksi. Admin & Kasir
+GET {{base}}/pengguna/mekanik
+
+### Daftar pengguna (filter q, role, aktif, page, limit). Admin
+GET {{base}}/pengguna?role=kasir&aktif=true&page=1&limit=20
+
+### Buat akun kasir
+# @name buatKasir
+POST {{base}}/pengguna
+Content-Type: application/json
+
+{ "nama": "Siti Kasir", "username": "kasir1", "password": "{{sandiStaf}}", "role": "kasir", "no_hp": "081200000001" }
+
+### Buat akun mekanik
+# @name buatMekanik
+POST {{base}}/pengguna
+Content-Type: application/json
+
+{ "nama": "Budi Mekanik", "username": "mekanik1", "password": "{{sandiStaf}}", "role": "mekanik" }
+
+### Ubah nama / role / no_hp (role berubah → log ubah_role; tidak boleh menurunkan diri sendiri)
+PATCH {{base}}/pengguna/{{buatKasir.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "nama": "Siti Rahma (Kasir)", "no_hp": "081200000009" }
+
+### Nonaktifkan / aktifkan akun (tidak boleh menonaktifkan diri sendiri atau admin terakhir → 409 ADMIN_TERAKHIR)
+PATCH {{base}}/pengguna/{{buatMekanik.response.body.$.data.id}}/status
+Content-Type: application/json
+
+{ "aktif": true }
+
+### Reset password (min 8 karakter) → 204
+POST {{base}}/pengguna/{{buatKasir.response.body.$.data.id}}/reset-password
+Content-Type: application/json
+
+{ "password_baru": "{{sandiStaf}}" }
+
+###############################################################################
+# 2. Data master (Admin): jasa, barang, restock
+###############################################################################
+
+### Tambah jasa
+# @name buatJasaOli
+POST {{base}}/jasa
+Content-Type: application/json
+
+{ "nama": "Ganti Oli", "harga": 30000 }
+
+### Tambah jasa lain
+# @name buatJasaServis
+POST {{base}}/jasa
+Content-Type: application/json
+
+{ "nama": "Servis Rutin", "harga": 75000 }
+
+### Daftar jasa (Admin: semua / filter aktif; Kasir hanya yang aktif)
+GET {{base}}/jasa?q=oli
+
+### Ubah jasa (harga berubah → log ubah_harga; transaksi lama tidak ikut berubah)
+PATCH {{base}}/jasa/{{buatJasaOli.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "harga": 35000 }
+
+### Nonaktifkan / aktifkan jasa
+PATCH {{base}}/jasa/{{buatJasaServis.response.body.$.data.id}}/status
+Content-Type: application/json
+
+{ "aktif": true }
+
+### Kategori barang (8 nilai pre-seeded). Semua role
+GET {{base}}/barang/kategori
+
+### Tambah barang (stok selalu mulai 0; field stok & harga_beli_rata_rata ditolak)
+# @name buatOli
+POST {{base}}/barang
+Content-Type: application/json
+
+{
+  "nama": "Oli Mesin 10W-40 1L",
+  "kategori": "cairan_consumables",
+  "satuan": "botol",
+  "harga_jual": 65000,
+  "stok_minimum": 5,
+  "lokasi_rak": "A1",
+  "kompatibilitas_motor": "Universal",
+  "tipe": "original"
+}
+
+### Tambah barang lain
+# @name buatKampas
+POST {{base}}/barang
+Content-Type: application/json
+
+{ "nama": "Kampas Rem Depan Vario 125", "kategori": "pengereman", "harga_jual": 45000, "lokasi_rak": "B2", "kompatibilitas_motor": "Vario 125, Beat" }
+
+### Cari barang (q mencari nama, lokasi rak, kompatibilitas motor). Admin melihat harga beli & margin; Kasir/Mekanik tidak
+GET {{base}}/barang?q=vario&kategori=pengereman&stok_menipis=false&page=1&limit=20
+
+### Detail barang
+GET {{base}}/barang/{{buatOli.response.body.$.data.id}}
+
+### Ubah barang (harga_jual berubah → log ubah_harga lama → baru)
+PATCH {{base}}/barang/{{buatOli.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "harga_jual": 70000, "lokasi_rak": "A2" }
+
+### Nonaktifkan / aktifkan barang (hanya disembunyikan dari non-admin, tidak dihapus)
+PATCH {{base}}/barang/{{buatKampas.response.body.$.data.id}}/status
+Content-Type: application/json
+
+{ "aktif": true }
+
+### Restock: harga per pcs & harga beli rata-rata tertimbang dihitung backend. Admin
+# @name restockOli
+POST {{base}}/pembelian
+Content-Type: application/json
+
+{ "barang_id": {{buatOli.response.body.$.data.id}}, "jumlah": 10, "total_harga": 250000, "keterangan": "Supplier A" }
+
+### Restock kedua dengan tanggal beli tertentu (harga rata-rata dihitung ulang)
+POST {{base}}/pembelian
+Content-Type: application/json
+
+{ "barang_id": {{buatOli.response.body.$.data.id}}, "jumlah": 10, "total_harga": 300000, "tanggal": "2026-10-01" }
+
+### Restock kampas
+POST {{base}}/pembelian
+Content-Type: application/json
+
+{ "barang_id": {{buatKampas.response.body.$.data.id}}, "jumlah": 5, "total_harga": 150000 }
+
+### Riwayat pembelian (filter dari, sampai, barang_id)
+GET {{base}}/pembelian?dari=2026-10-01&sampai=2026-10-31&page=1&limit=20
+
+### Riwayat pembelian satu barang
+GET {{base}}/barang/{{buatOli.response.body.$.data.id}}/pembelian
+
+### Penyesuaian stok manual (wajib alasan; hasil minus ditolak 409 STOK_TIDAK_CUKUP)
+POST {{base}}/barang/{{buatOli.response.body.$.data.id}}/penyesuaian-stok
+Content-Type: application/json
+
+{ "qty_perubahan": -1, "alasan": "Botol bocor, dibuang" }
+
+### Log pergerakan stok (masuk, keluar, penyesuaian) beserta penggunanya
+GET {{base}}/barang/{{buatOli.response.body.$.data.id}}/stok-log?page=1&limit=20
+
+###############################################################################
+# 3. Kasir: pelanggan & transaksi servis
+###############################################################################
+
+### Login sebagai kasir
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "username": "kasir1", "password": "{{sandiStaf}}" }
+
+### Tambah pelanggan (no_polisi & tipe_motor opsional)
+# @name buatPelanggan
+POST {{base}}/pelanggan
+Content-Type: application/json
+
+{ "nama": "Budi Santoso", "no_hp": "081234567890", "no_polisi": "R 1234 AB", "tipe_motor": "Vario 125" }
+
+### Cari pelanggan (q mencari nama, no HP, no polisi)
+GET {{base}}/pelanggan?q=1234
+
+### Detail pelanggan
+GET {{base}}/pelanggan/{{buatPelanggan.response.body.$.data.id}}
+
+### Ubah pelanggan
+PATCH {{base}}/pelanggan/{{buatPelanggan.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "tipe_motor": "Vario 150" }
+
+### Buat transaksi servis (kode TRX-YYYYMMDD-NNN per hari WIB; jasa_ids boleh kosong)
+# @name buatTransaksi
+POST {{base}}/transaksi
+Content-Type: application/json
+
+{
+  "pelanggan_id": {{buatPelanggan.response.body.$.data.id}},
+  "mekanik_id": {{buatMekanik.response.body.$.data.id}},
+  "keluhan": "Ganti oli, rem depan bunyi",
+  "jasa_ids": [{{buatJasaOli.response.body.$.data.id}}]
+}
+
+### Ubah keluhan / mekanik (hanya saat belum bayar)
+PATCH {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "keluhan": "Ganti oli, rem depan bunyi, rantai kendor" }
+
+### Tambah jasa ke transaksi (harga jasa disalin sebagai snapshot)
+# @name tambahJasa
+POST {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/jasa
+Content-Type: application/json
+
+{ "jasa_id": {{buatJasaServis.response.body.$.data.id}} }
+
+### Hapus baris jasa (respons: transaksi terbaru dengan total dihitung ulang)
+DELETE {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/jasa/{{tambahJasa.response.body.$.data.detail_jasa[1].id}}
+
+### Catat sparepart terpakai: Kasir mencatat dari kebutuhan yang disebut Mekanik. Stok berkurang otomatis
+# @name tambahSparepart
+POST {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/barang
+Content-Type: application/json
+
+{ "barang_id": {{buatOli.response.body.$.data.id}}, "qty": 2 }
+
+### Melebihi stok → 409 STOK_TIDAK_CUKUP { sisa_stok }
+POST {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/barang
+Content-Type: application/json
+
+{ "barang_id": {{buatOli.response.body.$.data.id}}, "qty": 999 }
+
+### Hapus sparepart sebelum lunas: stok dikembalikan, stok_log "masuk" ditulis
+DELETE {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/barang/{{tambahSparepart.response.body.$.data.detail_barang[0].id}}
+
+### Catat sparepart lagi (supaya transaksi punya isi sebelum dibayar)
+POST {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/barang
+Content-Type: application/json
+
+{ "barang_id": {{buatKampas.response.body.$.data.id}}, "qty": 1 }
+
+### Detail transaksi (Kasir tidak melihat harga_beli; Mekanik hanya transaksi miliknya, selain itu 404)
+GET {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}
+
+### Daftar transaksi (filter status_bayar, tanggal, q = kode / nama pelanggan / no polisi)
+GET {{base}}/transaksi?status_bayar=belum_bayar&tanggal=2026-10-06&q=budi&page=1&limit=20
+
+### Terima pembayaran → Lunas dan terkunci (metode: tunai | transfer | qris)
+POST {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/bayar
+Content-Type: application/json
+
+{ "metode_bayar": "tunai" }
+
+### Setelah lunas, semua perubahan ditolak → 409 TRANSAKSI_SUDAH_LUNAS
+PATCH {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "keluhan": "tidak boleh berubah" }
+
+### Riwayat transaksi satu pelanggan (FIN-7), terbaru dulu
+GET {{base}}/pelanggan/{{buatPelanggan.response.body.$.data.id}}/transaksi?page=1&limit=20
+
+### Tandai pelanggan "sudah dihubungi" (hilang dari reminder servis berkala sampai servis lagi)
+POST {{base}}/pelanggan/{{buatPelanggan.response.body.$.data.id}}/sudah-dihubungi
+
+### Dashboard Kasir: ringkasan hari ini, transaksi belum bayar, reminder (jam tutup, servis berkala)
+GET {{base}}/dashboard
+
+### Logout → 204
+POST {{base}}/auth/logout
+
+###############################################################################
+# 4. Mekanik: hanya membaca
+###############################################################################
+
+### Login sebagai mekanik
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "username": "mekanik1", "password": "{{sandiStaf}}" }
+
+### Dashboard Mekanik: transaksi belum bayar yang ditugaskan kepadanya
+GET {{base}}/dashboard
+
+### Transaksi miliknya saja (otomatis difilter di backend)
+GET {{base}}/transaksi
+
+### Cek stok & lokasi rak (tanpa harga beli)
+GET {{base}}/barang?q=oli
+
+### Mekanik menambah sparepart → 403 AKSES_DITOLAK (hanya menyampaikan ke Kasir)
+POST {{base}}/transaksi/{{buatTransaksi.response.body.$.data.id}}/barang
+Content-Type: application/json
+
+{ "barang_id": {{buatOli.response.body.$.data.id}}, "qty": 1 }
+
+###############################################################################
+# 5. Admin: pengeluaran, laporan, dashboard, histori, pengaturan
+###############################################################################
+
+### Login kembali sebagai admin
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "username": "{{adminUser}}", "password": "{{adminPass}}" }
+
+### Catat pengeluaran (kategori: listrik_air | sewa | gaji | peralatan | lainnya)
+# @name catatPengeluaran
+POST {{base}}/pengeluaran
+Content-Type: application/json
+
+{ "kategori": "listrik_air", "jumlah": 200000, "tanggal": "2026-10-06", "keterangan": "Tagihan listrik Oktober" }
+
+### Daftar pengeluaran (filter kategori, dari, sampai)
+GET {{base}}/pengeluaran?kategori=listrik_air&dari=2026-10-01&sampai=2026-10-31
+
+### Ubah pengeluaran
+PATCH {{base}}/pengeluaran/{{catatPengeluaran.response.body.$.data.id}}
+Content-Type: application/json
+
+{ "jumlah": 215000 }
+
+### Hapus pengeluaran → 204 (jumlah & tanggal tersimpan di log aktivitas)
+DELETE {{base}}/pengeluaran/{{catatPengeluaran.response.body.$.data.id}}
+
+### Laporan pemasukan per hari, dipecah jasa vs barang (tanpa dari/sampai = 7 hari terakhir WIB)
+GET {{base}}/laporan/pemasukan?dari=2026-10-01&sampai=2026-10-31&per=hari
+
+### Laporan pemasukan per minggu (awal_minggu = hari Senin)
+GET {{base}}/laporan/pemasukan?dari=2026-10-01&sampai=2026-10-31&per=minggu
+
+### Laporan uang keluar: pembelian barang + pengeluaran per kategori
+GET {{base}}/laporan/uang-keluar?dari=2026-10-01&sampai=2026-10-31
+
+### Laba kasar (pendapatan − harga beli barang terjual), bersama total pengeluaran & pembelian
+GET {{base}}/laporan/laba-kasar?dari=2026-10-01&sampai=2026-10-31
+
+### Barang terlaris
+GET {{base}}/laporan/barang-terlaris?dari=2026-10-01&sampai=2026-10-31&limit=10
+
+### Export laporan ke Excel (jenis: pemasukan | uang-keluar | laba-kasar | barang-terlaris)
+GET {{base}}/laporan/export?jenis=pemasukan&format=xlsx&dari=2026-10-01&sampai=2026-10-31
+
+### Export laporan ke PDF
+GET {{base}}/laporan/export?jenis=laba-kasar&format=pdf&dari=2026-10-01&sampai=2026-10-31
+
+### Dashboard Admin: ringkasan + pemasukan hari ini, alert stok menipis, reminder
+GET {{base}}/dashboard
+
+### Histori aktivitas (filter pengguna_id, aksi, dari, sampai)
+GET {{base}}/log-aktivitas?aksi=terima_pembayaran&dari=2026-10-01&sampai=2026-10-31&page=1&limit=20
+
+### Lihat pengaturan (jam tutup & interval servis berkala)
+GET {{base}}/pengaturan
+
+### Ubah pengaturan (jam_tutup 'HH:mm' WIB; interval_servis_hari 1–365)
+PATCH {{base}}/pengaturan
+Content-Type: application/json
+
+{ "jam_tutup": "17:00", "interval_servis_hari": 60 }

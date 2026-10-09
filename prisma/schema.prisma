@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enum ----------
+
+enum Role {
+  admin
+  kasir
+  mekanik
+}
+
+enum Kategori {
+  mesin
+  kelistrikan
+  pengereman
+  transmisi_penggerak
+  ban_roda
+  suspensi
+  body_aksesoris
+  cairan_consumables
+}
+
+enum TipeBarang {
+  original
+  kw1
+  kw2
+  lainnya
+}
+
+enum StatusBayar {
+  belum_bayar
+  lunas
+}
+
+enum MetodeBayar {
+  tunai
+  transfer
+  qris
+}
+
+enum TipeStokLog {
+  masuk
+  keluar
+  penyesuaian
+}
+
+enum KategoriPengeluaran {
+  listrik_air
+  sewa
+  gaji
+  peralatan
+  lainnya
+}
+
+// ---------- Master data ----------
+
+model Pengguna {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  nama          String   @db.VarChar(100)
+  username      String   @unique @db.VarChar(50)
+  password_hash String   @db.VarChar(255)
+  role          Role
+  no_hp         String?  @db.VarChar(20)
+  aktif         Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  transaksi_dibuat     TransaksiServis[] @relation("TransaksiDibuatOleh")
+  transaksi_dikerjakan TransaksiServis[] @relation("TransaksiMekanik")
+  transaksi_dibayar    TransaksiServis[] @relation("TransaksiDibayarOleh")
+  detail_barang        DetailBarang[]
+  pembelian            Pembelian[]
+  pengeluaran          Pengeluaran[]
+  stok_log             StokLog[]
+  log_aktivitas        LogAktivitas[]
+
+  @@map("pengguna")
+}
+
+model Pelanggan {
+  id                    BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  nama                  String    @db.VarChar(100)
+  no_hp                 String    @db.VarChar(20)
+  no_polisi             String?   @db.VarChar(15)
+  tipe_motor            String?   @db.VarChar(100)
+  terakhir_dihubungi_at DateTime?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  transaksi TransaksiServis[]
+
+  @@index([no_hp])
+  @@index([no_polisi])
+  @@map("pelanggan")
+}
+
+model Barang {
+  id                   BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  nama                 String      @db.VarChar(150)
+  kategori             Kategori
+  satuan               String      @default("pcs") @db.VarChar(20)
+  harga_beli_rata_rata Decimal     @default(0) @db.Decimal(12, 2)
+  harga_jual           Decimal     @db.Decimal(12, 2)
+  stok                 Int         @default(0) @db.UnsignedInt
+  stok_minimum         Int         @default(0) @db.UnsignedInt
+  lokasi_rak           String?     @db.VarChar(50)
+  kompatibilitas_motor String?     @db.VarChar(255)
+  tipe                 TipeBarang?
+  aktif                Boolean     @default(true)
+  created_at           DateTime    @default(now())
+  updated_at           DateTime    @updatedAt
+
+  detail_barang DetailBarang[]
+  pembelian     Pembelian[]
+  stok_log      StokLog[]
+
+  @@index([nama])
+  @@index([kategori])
+  @@map("barang")
+}
+
+model Jasa {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  nama       String   @db.VarChar(100)
+  harga      Decimal  @db.Decimal(12, 2)
+  aktif      Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  detail_jasa DetailJasa[]
+
+  @@map("jasa")
+}
+
+// ---------- Transaksi ----------
+
+model TransaksiServis {
+  id              BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  kode            String       @unique @db.VarChar(20)
+  pelanggan_id    BigInt       @db.UnsignedBigInt
+  dibuat_oleh_id  BigInt       @db.UnsignedBigInt
+  mekanik_id      BigInt       @db.UnsignedBigInt
+  keluhan         String?      @db.Text
+  subtotal_jasa   Decimal      @default(0) @db.Decimal(12, 2)
+  subtotal_barang Decimal      @default(0) @db.Decimal(12, 2)
+  total           Decimal      @default(0) @db.Decimal(12, 2)
+  status_bayar    StatusBayar  @default(belum_bayar)
+  metode_bayar    MetodeBayar?
+  dibayar_at      DateTime?
+  dibayar_oleh_id BigInt?      @db.UnsignedBigInt
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  pelanggan     Pelanggan @relation(fields: [pelanggan_id], references: [id])
+  dibuat_oleh   Pengguna  @relation("TransaksiDibuatOleh", fields: [dibuat_oleh_id], references: [id])
+  mekanik       Pengguna  @relation("TransaksiMekanik", fields: [mekanik_id], references: [id])
+  dibayar_oleh  Pengguna? @relation("TransaksiDibayarOleh", fields: [dibayar_oleh_id], references: [id])
+  detail_jasa   DetailJasa[]
+  detail_barang DetailBarang[]
+  stok_log      StokLog[]
+
+  @@index([created_at])
+  @@index([mekanik_id, status_bayar])
+  @@map("transaksi_servis")
+}
+
+model DetailJasa {
+  id                  BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  transaksi_servis_id BigInt   @db.UnsignedBigInt
+  jasa_id             BigInt   @db.UnsignedBigInt
+  harga               Decimal  @db.Decimal(12, 2)
+  created_at          DateTime @default(now())
+
+  transaksi_servis TransaksiServis @relation(fields: [transaksi_servis_id], references: [id])
+  jasa             Jasa            @relation(fields: [jasa_id], references: [id])
+
+  @@map("detail_jasa")
+}
+
+model DetailBarang {
+  id                  BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  transaksi_servis_id BigInt   @db.UnsignedBigInt
+  barang_id           BigInt   @db.UnsignedBigInt
+  qty                 Int      @db.UnsignedInt
+  harga_jual          Decimal  @db.Decimal(12, 2)
+  harga_beli          Decimal  @db.Decimal(12, 2)
+  dicatat_oleh_id     BigInt   @db.UnsignedBigInt
+  created_at          DateTime @default(now())
+
+  transaksi_servis TransaksiServis @relation(fields: [transaksi_servis_id], references: [id])
+  barang           Barang          @relation(fields: [barang_id], references: [id])
+  dicatat_oleh     Pengguna        @relation(fields: [dicatat_oleh_id], references: [id])
+
+  @@map("detail_barang")
+}
+
+model Pembelian {
+  id             BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  barang_id      BigInt   @db.UnsignedBigInt
+  jumlah         Int      @db.UnsignedInt
+  total_harga    Decimal  @db.Decimal(12, 2)
+  harga_per_pcs  Decimal  @db.Decimal(12, 2)
+  tanggal        DateTime @db.Date
+  keterangan     String?  @db.VarChar(255)
+  dibuat_oleh_id BigInt   @db.UnsignedBigInt
+  created_at     DateTime @default(now())
+
+  barang      Barang    @relation(fields: [barang_id], references: [id])
+  dibuat_oleh Pengguna  @relation(fields: [dibuat_oleh_id], references: [id])
+  stok_log    StokLog[]
+
+  @@index([tanggal])
+  @@map("pembelian")
+}
+
+model Pengeluaran {
+  id             BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  kategori       KategoriPengeluaran
+  keterangan     String?             @db.VarChar(255)
+  jumlah         Decimal             @db.Decimal(12, 2)
+  tanggal        DateTime            @db.Date
+  dibuat_oleh_id BigInt              @db.UnsignedBigInt
+  created_at     DateTime            @default(now())
+  updated_at     DateTime            @updatedAt
+
+  dibuat_oleh Pengguna @relation(fields: [dibuat_oleh_id], references: [id])
+
+  @@index([tanggal])
+  @@map("pengeluaran")
+}
+
+// ---------- Log & sistem ----------
+
+model StokLog {
+  id                  BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  barang_id           BigInt      @db.UnsignedBigInt
+  tipe                TipeStokLog
+  qty_perubahan       Int
+  stok_sesudah        Int         @db.UnsignedInt
+  transaksi_servis_id BigInt?     @db.UnsignedBigInt
+  pembelian_id        BigInt?     @db.UnsignedBigInt
+  keterangan          String?     @db.VarChar(255)
+  pengguna_id         BigInt      @db.UnsignedBigInt
+  created_at          DateTime    @default(now())
+
+  barang           Barang           @relation(fields: [barang_id], references: [id])
+  transaksi_servis TransaksiServis? @relation(fields: [transaksi_servis_id], references: [id])
+  pembelian        Pembelian?       @relation(fields: [pembelian_id], references: [id])
+  pengguna         Pengguna         @relation(fields: [pengguna_id], references: [id])
+
+  @@index([barang_id, created_at])
+  @@map("stok_log")
+}
+
+model LogAktivitas {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  pengguna_id BigInt   @db.UnsignedBigInt
+  aksi        String   @db.VarChar(50)
+  entitas     String   @db.VarChar(50)
+  entitas_id  BigInt?  @db.UnsignedBigInt
+  keterangan  String?  @db.VarChar(255)
+  created_at  DateTime @default(now())
+
+  pengguna Pengguna @relation(fields: [pengguna_id], references: [id])
+
+  @@index([pengguna_id, created_at])
+  @@map("log_aktivitas")
+}
+
+model Pengaturan {
+  kunci String @id @db.VarChar(50)
+  nilai String @db.VarChar(255)
+
+  @@map("pengaturan")
+}
